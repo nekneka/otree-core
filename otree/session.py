@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# changed it to use create instead of bulk_create
+
 import random
 import sys
 from functools import reduce
@@ -343,12 +345,16 @@ def create_session(
             Group = models_module.Group
             Player = models_module.Player
 
-            Subsession.objects.bulk_create(
-                [
-                    Subsession(round_number=round_number, session=session)
-                    for round_number in round_numbers
-                ]
-            )
+            # bulk_create appears not to work with multiple inheritance
+            for round_number in round_numbers:
+                Subsession.objects.create(round_number=round_number, session=session)
+
+            # Subsession.objects.bulk_create(
+            #     [
+            #         Subsession(round_number=round_number, session=session)
+            #         for round_number in round_numbers
+            #     ]
+            # )
 
             subsessions = Subsession.objects.filter(
                 session=session).order_by('round_number').values(
@@ -360,20 +366,31 @@ def create_session(
 
             num_groups_per_round = int(num_participants/ppg)
 
-            groups_to_create = []
+            # same here
+
+            # groups_to_create = []
+            # for subsession in subsessions:
+            #     for id_in_subsession in range(1, num_groups_per_round+1):
+            #         groups_to_create.append(
+            #             Group(
+            #                 session=session,
+            #                 subsession_id=subsession['id'],
+            #                 round_number=subsession['round_number'],
+            #                 id_in_subsession=id_in_subsession,
+            #             )
+            #         )
+            # Group.objects.bulk_create(groups_to_create)
+
             for subsession in subsessions:
                 for id_in_subsession in range(1, num_groups_per_round+1):
-                    groups_to_create.append(
-                        Group(
+                    Group.objects.create(
                             session=session,
                             subsession_id=subsession['id'],
                             round_number=subsession['round_number'],
                             id_in_subsession=id_in_subsession,
-                        )
                     )
 
-            Group.objects.bulk_create(groups_to_create)
-
+            # -----
             groups = Group.objects.filter(session=session).values(
                 'id_in_subsession', 'subsession_id', 'id'
             ).order_by('id_in_subsession')
@@ -384,7 +401,32 @@ def create_session(
                 subsession_id = group['subsession_id']
                 groups_lookup[subsession_id].append(group['id'])
 
-            players_to_create = []
+
+
+            # another bulk
+            # players_to_create = []
+            # for subsession in subsessions:
+            #     subsession_id=subsession['id']
+            #     round_number=subsession['round_number']
+            #     participant_index = 0
+            #     for group_id in groups_lookup[subsession_id]:
+            #         for id_in_group in range(1, ppg+1):
+            #             participant = participant_values[participant_index]
+            #             players_to_create.append(
+            #                 Player(
+            #                     session=session,
+            #                     subsession_id=subsession_id,
+            #                     round_number=round_number,
+            #                     participant_id=participant['id'],
+            #                     group_id=group_id,
+            #                     id_in_group=id_in_group
+            #                 )
+            #             )
+            #             participant_index += 1
+
+            # Create players
+
+            # Player.objects.bulk_create(players_to_create)
 
             for subsession in subsessions:
                 subsession_id=subsession['id']
@@ -393,20 +435,17 @@ def create_session(
                 for group_id in groups_lookup[subsession_id]:
                     for id_in_group in range(1, ppg+1):
                         participant = participant_values[participant_index]
-                        players_to_create.append(
-                            Player(
+                        Player.objects.create(
                                 session=session,
                                 subsession_id=subsession_id,
                                 round_number=round_number,
                                 participant_id=participant['id'],
                                 group_id=group_id,
                                 id_in_group=id_in_group
-                            )
                         )
                         participant_index += 1
 
-            # Create players
-            Player.objects.bulk_create(players_to_create)
+            # -------
 
             players_flat = Player.objects.filter(session=session).values(
                 'id', 'participant__code', 'participant__id', 'subsession__id',
@@ -418,6 +457,9 @@ def create_session(
                 players_by_round[p['round_number']-1].append(p)
 
             for round_number, round_players in enumerate(players_by_round, start=1):
+
+                print("in otree: " + str(views_module.page_sequence))
+
                 for View in views_module.page_sequence:
                     page_index += 1
                     for p in round_players:
@@ -429,9 +471,8 @@ def create_session(
                             name_in_url=Constants.name_in_url,
                             page_index=page_index
                         )
-
-                        participant_to_player_lookups.append(
-                            ParticipantToPlayerLookup(
+                        # ------ same:
+                        ParticipantToPlayerLookup.objects.create(
                                 participant_id=p['participant__id'],
                                 participant_code=participant_code,
                                 page_index=page_index,
@@ -439,11 +480,22 @@ def create_session(
                                 player_pk=p['id'],
                                 subsession_pk=p['subsession__id'],
                                 session_pk=session.pk,
-                                url=url))
+                                url=url
+                        )
+                        # participant_to_player_lookups.append(
+                        #     ParticipantToPlayerLookup(
+                        #         participant_id=p['participant__id'],
+                        #         participant_code=participant_code,
+                        #         page_index=page_index,
+                        #         app_name=app_name,
+                        #         player_pk=p['id'],
+                        #         subsession_pk=p['subsession__id'],
+                        #         session_pk=session.pk,
+                        #         url=url))
 
-        ParticipantToPlayerLookup.objects.bulk_create(
-            participant_to_player_lookups
-        )
+        # ParticipantToPlayerLookup.objects.bulk_create(
+        #     participant_to_player_lookups
+        # )
         session.participant_set.update(_max_page_index=page_index)
 
         with otree.db.idmap.use_cache():
